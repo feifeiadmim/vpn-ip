@@ -1,0 +1,50 @@
+name: 同步上游仓库
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # 每天运行一次（UTC时间0点，北京时间8点）
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          
+      - name: 配置 Git
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          
+      - name: 获取上游仓库
+        id: get_upstream
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const repo = await github.rest.repos.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            });
+            if (repo.data.parent) {
+              return repo.data.parent.html_url;
+            } else {
+              return 'NOT_FOUND';
+            }
+          result-encoding: string
+            
+      - name: 添加上游仓库
+        run: |
+          if [ "${{ steps.get_upstream.outputs.result }}" != "NOT_FOUND" ]; then
+            git remote add upstream ${{ steps.get_upstream.outputs.result }}
+            git fetch upstream
+            git checkout main  # 或你的默认分支名
+            git merge upstream/main  # 替换为原仓库的默认分支名
+            git push origin main
+          else
+            echo "未找到上游仓库，请确保此仓库是fork的"
+            exit 1
+          fi
